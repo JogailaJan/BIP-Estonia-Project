@@ -1,0 +1,83 @@
+import pdfplumber
+import cv2
+import numpy as np
+
+# 1. Ištraukti lentelę iš PDF
+def extract_table_from_pdf(pdf_path, start_page=37):
+    elements = []
+    with pdfplumber.open(pdf_path) as pdf:
+        page = pdf.pages[start_page - 1]  # Pradėti nuo 37 puslapio
+        table = page.extract_table()
+
+        # Išfiltruoti lentelės duomenis
+        for row in table[1:]:  # Pirmas elementas yra antraštė
+            number = row[0]       # Pirmas stulpelis
+            symbol = row[1]       # Antras stulpelis
+            description = row[2]  # Trečias stulpelis
+            elements.append((number, symbol, description))
+    return elements
+
+# 2. Atvaizduoti ir pažymėti elementus
+def mark_elements_on_image(image, elements):
+    marked_image = image.copy()
+
+    # Paversti į pilką atvaizdą
+    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    blurred_image = cv2.GaussianBlur(gray_image, (5, 5), 0)
+    
+    # Nustatyti kraštus
+    edges = cv2.Canny(blurred_image, 50, 150)
+
+    # Rasti kontūrus
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Žymėti kontūrus
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if area > 100:  # Ignoruoti mažus kontūrus
+            x, y, w, h = cv2.boundingRect(contour)
+            cv2.rectangle(marked_image, (x, y), (x + w, y + h), (255, 0, 0), 2)
+            cv2.putText(marked_image, "Detected", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+
+    return marked_image
+
+# 3. Realiojo laiko skenavimas
+def live_scan(elements):
+    cap = cv2.VideoCapture(0)  # Naudoti pirmąją kamerą
+    if not cap.isOpened():
+        print("Kameros atidaryti nepavyko!")
+        return
+
+    print("Kamera atidaryta, pradedamas skenavimas...")
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Negalima nuskaityti vaizdo iš kameros!")
+            break
+
+        marked_image = mark_elements_on_image(frame, elements)
+
+        cv2.imshow('Live Scan', marked_image)
+
+        key = cv2.waitKey(1)
+        if key == ord('s'):  # Paspaudus 's', išsaugokite vaizdą
+            cv2.imwrite('marked_live_image.png', marked_image)
+            print("Vaizdas išsaugotas kaip 'marked_live_image.png'")
+        elif key == ord('q'):  # Išeiti iš ciklo paspaudus 'q'
+            print("Išeinama iš programos...")
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+# Pagrindinė programa
+if __name__ == "__main__":
+    pdf_path = "Instrumentation_Symbols_and_Identification.pdf"  # Jūsų PDF failo pavadinimas
+
+    # 1. Ištraukite lentelę iš PDF
+    elements = extract_table_from_pdf(pdf_path)
+    print("Rasti elementai:", elements)
+
+    # 2. Paleiskite realų skenavimą
+    live_scan(elements)

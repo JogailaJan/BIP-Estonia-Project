@@ -1,57 +1,52 @@
 import cv2
 import numpy as np
 
-# Įkeliamas simbolio šablonas
-template = cv2.imread('test.png', 0)
+# Įkelti simbolių šablonus iš PDF (čia turėtum naudoti savo išgautus šablonus)
+symbol_templates = {
+    'symbol_1': cv2.imread('symbol_1.png', 0),
+    'symbol_2': cv2.imread('symbol_2.png', 0)
+    # pridėk daugiau simbolių iš PDF failo
+}
 
-# Patikriname, ar šablonas įkeltas teisingai
-if template is None:
-    print("Nepavyko įkelti šablono!")
-    exit()
-
-w, h = template.shape[::-1]
+# Patikrinti, ar visi šablonai įkelti teisingai
+for name, template in symbol_templates.items():
+    if template is None:
+        print(f"Nepavyko įkelti {name} šablono!")
+        exit()
 
 # Web kameros vaizdas
 cap = cv2.VideoCapture(0)
 
-# Patikrink, ar kamera atidaryta
 if not cap.isOpened():
     print("Kamera nepavyko atidaryti!")
     exit()
 
 while True:
-    # Nuskaityti vaizdą iš kameros
     ret, frame = cap.read()
     
     if not ret:
         print("Nepavyko gauti vaizdo iš kameros.")
         break
 
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-    # Šablono atpažinimas
-    result = cv2.matchTemplate(gray, template, cv2.TM_CCOEFF_NORMED)
-    threshold = 0.6  # Pabandyk su 0.6
-    loc = np.where(result >= threshold)
-
-    # Pažymėti atpažintus simbolius ir rodyti aprašymą
     detected = False
-    for pt in zip(*loc[::-1]):
-        cv2.rectangle(frame, pt, (pt[0] + w, pt[1] + h), (0, 255, 0), 2)
-        detected = True  # Nustatyti, kad simbolis buvo aptiktas
+    for name, template in symbol_templates.items():
+        w, h = template.shape[::-1]
+        result = cv2.matchTemplate(gray_frame, template, cv2.TM_CCOEFF_NORMED)
+        loc = np.where(result >= 0.6)  # Nustatyti atpažinimo slenkstį
 
-    # Jei simbolis aptiktas, rodome aprašymą
-    if detected:
-        cv2.putText(frame, 'Two-way on-off solenoid valve', (10, 30), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        for pt in zip(*loc[::-1]):
+            cv2.rectangle(frame, pt, (pt[0] + w, pt[1] + h), (0, 255, 0), 2)
+            cv2.putText(frame, name, (pt[0], pt[1] - 10), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+            detected = True
 
-    # Rodo vaizdą su pažymėtais simboliais
+    # Rodyti vaizdą su pažymėtais simboliais
     cv2.imshow('Detected Symbols', frame)
 
-    # Išeiti paspaudus "q"
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
-# Atleidžiam resursus
 cap.release()
 cv2.destroyAllWindows()

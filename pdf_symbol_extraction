@@ -1,0 +1,42 @@
+import os
+import json
+import cv2
+import pytesseract
+from pdf2image import convert_from_path
+
+def extract_symbols_and_descriptions(text):
+    # Čia įdėkite savo logiką, kaip ištraukti simbolius ir jų aprašymus iš teksto
+    # Pavyzdžiui, galite naudoti reguliariąsias išraiškas arba NLP metodus
+    symbols = []
+    # ... jūsų kodas čia ...
+    return symbols
+
+# Nustatyti PDF failo kelią
+pdf_path = 'AMERICAN_NATIONAL_STANDARD_ANSI_ISA-5.1-2009_Instrumentation_Symbols_and_Identification.pdf'
+output_dir = 'extracted_images'
+
+# Konvertuoti PDF į vaizdus
+pages = convert_from_path(pdf_path, dpi=600)
+
+# Sukurti sąrašą simboliams saugoti
+symbols = []
+
+# Išsaugoti kiekvieną PDF puslapį kaip PNG failą ir ištraukti simbolius
+for i, page in enumerate(pages):
+    image_path = os.path.join(output_dir, f'page_{i + 1}.png')
+    page.save(image_path, 'PNG')
+
+    # Konvertuoti į pilką skalę
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    # Naudoti OCR tekstui iš vaizdo išgauti su papildoma konfigūracija
+    custom_config = r'--oem 3 --psm 6 -l eng'
+    text = pytesseract.image_to_string(gray, config=custom_config)
+
+    # Ištraukti simbolius ir aprašymus
+    symbols.extend(extract_symbols_and_descriptions(text))
+
+# Išsaugoti simbolius JSON faile
+json_output_path = os.path.join(output_dir, 'symbols.json')
+with open(json_output_path, 'w') as json_file:
+    json.dump(symbols, json_file, indent=4)
