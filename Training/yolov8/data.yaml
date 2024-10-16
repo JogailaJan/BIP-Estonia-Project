@@ -1,0 +1,7 @@
+train: Training/yolov8/dataset/images/train
+val: Training/yolov8/dataset/images/val
+test: Training/yolov8/dataset/images/test
+
+
+nc: 2  # Number of classes
+names: ['gate-valve', 'hand-operated-gate-valve']  # Class names
