@@ -1,94 +1,164 @@
 import cv2
-import pytesseract
-import pdfplumber
+import os
+import numpy as np
+import tkinter as tk
+from tkinter import filedialog, messagebox
+from tkinter import ttk
 
-# Nurodykite Tesseract OCR kelia
-pytesseract.pytesseract.tesseract_cmd = r'C:\Users\guest08\AppData\Local\Programs\Tesseract-OCR\tesseract.exe'
+# Elementų šablonų keliai
+element_templates = {
+    'resistor': 'C:/Users/guest08/Documents/GitHub/BIP-Estonia-Project/Symbols/resistor.png',
+    'GenericTwoWayValve': 'C:/Users/guest08/Documents/GitHub/BIP-Estonia-Project/Symbols/GenericTwoWayValve.png',
+    'GenericActuator': 'C:/Users/guest08/Documents/GitHub/BIP-Estonia-Project/Symbols/GenericActuator.png'
+}
 
-# PDF failo kelias
-pdf_path = 'C:/Users/guest08/Documents/GitHub/BIP-Estonia-Project/Instrumentation_Symbols_and_Identification.pdf'
+# Funkcija ignoruoti baltas sritis ir paryškinti kontūrus
+def preprocess_image(image):
+    if len(image.shape) == 3:  # Tikriname, ar vaizdas turi 3 kanalus (spalvotas vaizdas)
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image  # Jei jau yra pilkų atspalvių, paliekame kaip yra
 
-def extract_table_from_pdf(pdf_path):
-    try:
-        with pdfplumber.open(pdf_path) as pdf:
-            table = []
-            for page in pdf.pages:
-                page_table = page.extract_table()
-                if page_table:
-                    table.extend(page_table)
+    # Ignoruoti baltą spalvą
+    _, thresh = cv2.threshold(gray, 240, 255, cv2.THRESH_BINARY_INV)
 
-            # Filtruoti lentelės eiles
-            filtered_rows = []
-            for row in table:
-                # Filtruojame netinkamas eilutes
-                if len(row) < 3 or all(cell in [None, '', ''] for cell in row):
+    # Naudoti kontūrų išryškinimą
+    edged = cv2.Canny(thresh, 50, 200)
+    return edged
+
+# Funkcija, skirta aptikti simbolius pagal šabloną (template matching)
+def detect_symbols_from_image(image):
+    detected_symbols = []
+    processed_image = preprocess_image(image)
+
+    image_height, image_width = processed_image.shape[:2]
+
+    for element_name, template_path in element_templates.items():
+        if os.path.exists(template_path):
+            template = cv2.imread(template_path, 0)  # Nuskaitome šabloną pilku atspalviu
+            template = preprocess_image(template)
+            template_height, template_width = template.shape[:2]
+
+            best_match_value = 0
+            best_match_location = None
+            best_template_scale = None
+
+            # Pradėkime su mastelio keitimu (scale) nuo 0.5 iki 1.5
+            for scale in np.linspace(0.5, 1.5, 20):
+                resized_template = cv2.resize(template, None, fx=scale, fy=scale)
+
+                if resized_template.shape[0] > image_height or resized_template.shape[1] > image_width:
                     continue
-                filtered_rows.append(row)
 
-            # Grąžinkite žodyną iš lentelės
-            return {row[0]: (row[1], row[2]) for row in filtered_rows if row[0] is not None}
-    except Exception as e:
-        print(f"Nepavyko ištraukti elementų iš PDF: {e}")
-        return {}
+                result = cv2.matchTemplate(processed_image, resized_template, cv2.TM_CCOEFF_NORMED)
+                min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(result)
 
-def live_scan(elements):
-    cap = cv2.VideoCapture(0)  # Pakeiskite kamerą, jei reikia
+                # Patikriname, ar ši vieta yra geresnė už ankstesnę
+                if max_val > best_match_value:
+                    best_match_value = max_val
+                    best_match_location = max_loc
+                    best_template_scale = scale
+
+            if best_match_value >= 0.55:  # Slenkstis nuleistas iki 0.55
+                # Pažymime aptiktą simbolį
+                detected_symbols.append({
+                    'symbol': element_name,
+                    'coordinates': (best_match_location[0], best_match_location[1],
+                                    int(template_width * best_template_scale),
+                                    int(template_height * best_template_scale))
+                })
+
+                # Pažymėti aptiktą simbolį raudonu kvadratu
+                top_left = best_match_location
+                bottom_right = (top_left[0] + int(template_width * best_template_scale),
+                                top_left[1] + int(template_height * best_template_scale))
+
+                cv2.putText(image, element_name, (top_left[0], top_left[1] - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                cv2.rectangle(image, top_left, bottom_right, (0, 0, 255), 3)
+
+    return detected_symbols
+
+# Funkcija, skirta apdoroti įkeltą nuotrauką ir aptikti simbolius
+def upload_image():
+    file_path = filedialog.askopenfilename(filetypes=[("Image files", "*.png;*.jpg;*.jpeg")])
+    if file_path:
+        image = cv2.imread(file_path)
+        detected_symbols = detect_symbols_from_image(image)
+
+        if detected_symbols:
+            cv2.imshow('Detected Symbols in Photo', image)
+            print(f"Detected Symbols: {detected_symbols}")
+        else:
+            messagebox.showinfo("Information", "No symbols detected!")
+
+# Funkcija, skirta skenuoti su kamera ir leisti fotografuoti (S mygtukas)
+def scan_image():
+    cap = cv2.VideoCapture(0)
 
     if not cap.isOpened():
-        print("Kameros nepavyko atidaryti.")
+        messagebox.showerror("Error", "Unable to open camera.")
         return
 
-    detected_symbols = []  # Sąrašas, kuriame saugosime aptiktus simbolius
+    frame_count = 0
 
     while True:
         ret, frame = cap.read()
         if not ret:
-            print("Nepavyko nuskaityti vaizdo.")
+            print("Failed to read frame.")
             break
 
-        # Naudoti Tesseract OCR atpažinti tekstą
-        ocr_data = pytesseract.image_to_data(frame, output_type=pytesseract.Output.DICT)
+        detected_symbols = detect_symbols_from_image(frame)
 
-        # Patikrinkite, ar OCR rezultatas nėra tuščias
-        for i in range(len(ocr_data['text'])):
-            text = ocr_data['text'][i].strip()  # Pašalinti aplinkinius tarpus
-            if int(ocr_data['conf'][i]) > 60 and text:  # Patikriname konfidencialumo lygį ir ar tekstas nėra tuščias
-                if text in elements:
-                    x = ocr_data['left'][i]
-                    y = ocr_data['top'][i]
-                    w = ocr_data['width'][i]
-                    h = ocr_data['height'][i]
-                    
-                    color, description = elements[text]
-
-                    # Išsaugome aptiktą simbolį
-                    detected_symbols.append({
-                        'symbol': text,
-                        'description': description,
-                        'coordinates': (x, y, w, h)
-                    })
-
-                    # Pažymėkite simbolį ir pridėkite aprašymą
-                    cv2.putText(frame, description, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)  # Raudonas kvadratas
-
-        # Rodykite vaizdą
+        # Rodyti vaizdą su aptiktais simboliais
         cv2.imshow('Live Scan', frame)
 
-        # Galite spausdinti aptiktus simbolius
-        for symbol_info in detected_symbols:
-            print(f"Detected: {symbol_info['symbol']} - Description: {symbol_info['description']} - Coordinates: {symbol_info['coordinates']}")
+        key = cv2.waitKey(1) & 0xFF
 
-        # Išeiti iš ciklo paspaudus 'q'
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        # Išsaugoti vaizdą paspaudus "S"
+        if key == ord('s'):
+            frame_count += 1
+            image_path = f'screenshot_{frame_count}.png'
+            cv2.imwrite(image_path, frame)
+            print(f"Image saved as: {image_path}")
+
+        # Išeiti iš ciklo paspaudus "q"
+        if key == ord('q'):
             break
 
     cap.release()
     cv2.destroyAllWindows()
 
+# Patobulinta GUI sąsaja su Tkinter ir ttk stiliumi, bei keybinds informacija
+def main():
+    root = tk.Tk()
+    root.title("Symbol Recognition")
+    root.geometry("500x400")
+    root.configure(bg="#f0f0f0")
 
-elements = extract_table_from_pdf(pdf_path)  # Gaunate elementus iš PDF
-if elements:
-    live_scan(elements)
-else:
-    print("Nepavyko gauti elementų iš PDF.")
+    # Pridėti stilių
+    style = ttk.Style()
+    style.configure('TButton', font=('Helvetica', 12), padding=10)
+    style.configure('TLabel', font=('Helvetica', 14), padding=10)
+
+    # Pavadinimas
+    title_label = ttk.Label(root, text="Symbol Recognition System", background="#f0f0f0")
+    title_label.pack(pady=20)
+
+    # "Upload Photo" mygtukas
+    upload_button = ttk.Button(root, text="Upload Circuit Diagram", command=upload_image)
+    upload_button.pack(pady=10)
+
+    # "Scan" mygtukas
+    scan_button = ttk.Button(root, text="Scan with Camera", command=scan_image)
+    scan_button.pack(pady=10)
+
+    # Keybinds informacija
+    keybinds_label = ttk.Label(root, text="Keybinds:\nQ - Close Camera\nS - Take Screenshot\n", background="#f0f0f0")
+    keybinds_label.pack(pady=20)
+
+    # Užbaigti GUI loop
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()
