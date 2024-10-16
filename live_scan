@@ -1,83 +1,94 @@
-import pdfplumber
 import cv2
-import numpy as np
+import pytesseract
+import pdfplumber
 
-# 1. Ištraukti lentelę iš PDF
-def extract_table_from_pdf(pdf_path, start_page=37):
-    elements = []
-    with pdfplumber.open(pdf_path) as pdf:
-        page = pdf.pages[start_page - 1]  # Pradėti nuo 37 puslapio
-        table = page.extract_table()
+# Nurodykite Tesseract OCR kelia
+pytesseract.pytesseract.tesseract_cmd = r'C:\Users\guest08\AppData\Local\Programs\Tesseract-OCR\tesseract.exe'
 
-        # Išfiltruoti lentelės duomenis
-        for row in table[1:]:  # Pirmas elementas yra antraštė
-            number = row[0]       # Pirmas stulpelis
-            symbol = row[1]       # Antras stulpelis
-            description = row[2]  # Trečias stulpelis
-            elements.append((number, symbol, description))
-    return elements
+# PDF failo kelias
+pdf_path = 'C:/Users/guest08/Documents/GitHub/BIP-Estonia-Project/Instrumentation_Symbols_and_Identification.pdf'
 
-# 2. Atvaizduoti ir pažymėti elementus
-def mark_elements_on_image(image, elements):
-    marked_image = image.copy()
+def extract_table_from_pdf(pdf_path):
+    try:
+        with pdfplumber.open(pdf_path) as pdf:
+            table = []
+            for page in pdf.pages:
+                page_table = page.extract_table()
+                if page_table:
+                    table.extend(page_table)
 
-    # Paversti į pilką atvaizdą
-    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    blurred_image = cv2.GaussianBlur(gray_image, (5, 5), 0)
-    
-    # Nustatyti kraštus
-    edges = cv2.Canny(blurred_image, 50, 150)
+            # Filtruoti lentelės eiles
+            filtered_rows = []
+            for row in table:
+                # Filtruojame netinkamas eilutes
+                if len(row) < 3 or all(cell in [None, '', ''] for cell in row):
+                    continue
+                filtered_rows.append(row)
 
-    # Rasti kontūrus
-    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            # Grąžinkite žodyną iš lentelės
+            return {row[0]: (row[1], row[2]) for row in filtered_rows if row[0] is not None}
+    except Exception as e:
+        print(f"Nepavyko ištraukti elementų iš PDF: {e}")
+        return {}
 
-    # Žymėti kontūrus
-    for contour in contours:
-        area = cv2.contourArea(contour)
-        if area > 100:  # Ignoruoti mažus kontūrus
-            x, y, w, h = cv2.boundingRect(contour)
-            cv2.rectangle(marked_image, (x, y), (x + w, y + h), (255, 0, 0), 2)
-            cv2.putText(marked_image, "Detected", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
-
-    return marked_image
-
-# 3. Realiojo laiko skenavimas
 def live_scan(elements):
-    cap = cv2.VideoCapture(0)  # Naudoti pirmąją kamerą
+    cap = cv2.VideoCapture(0)  # Pakeiskite kamerą, jei reikia
+
     if not cap.isOpened():
-        print("Kameros atidaryti nepavyko!")
+        print("Kameros nepavyko atidaryti.")
         return
 
-    print("Kamera atidaryta, pradedamas skenavimas...")
+    detected_symbols = []  # Sąrašas, kuriame saugosime aptiktus simbolius
 
     while True:
         ret, frame = cap.read()
         if not ret:
-            print("Negalima nuskaityti vaizdo iš kameros!")
+            print("Nepavyko nuskaityti vaizdo.")
             break
 
-        marked_image = mark_elements_on_image(frame, elements)
+        # Naudoti Tesseract OCR atpažinti tekstą
+        ocr_data = pytesseract.image_to_data(frame, output_type=pytesseract.Output.DICT)
 
-        cv2.imshow('Live Scan', marked_image)
+        # Patikrinkite, ar OCR rezultatas nėra tuščias
+        for i in range(len(ocr_data['text'])):
+            text = ocr_data['text'][i].strip()  # Pašalinti aplinkinius tarpus
+            if int(ocr_data['conf'][i]) > 60 and text:  # Patikriname konfidencialumo lygį ir ar tekstas nėra tuščias
+                if text in elements:
+                    x = ocr_data['left'][i]
+                    y = ocr_data['top'][i]
+                    w = ocr_data['width'][i]
+                    h = ocr_data['height'][i]
+                    
+                    color, description = elements[text]
 
-        key = cv2.waitKey(1)
-        if key == ord('s'):  # Paspaudus 's', išsaugokite vaizdą
-            cv2.imwrite('marked_live_image.png', marked_image)
-            print("Vaizdas išsaugotas kaip 'marked_live_image.png'")
-        elif key == ord('q'):  # Išeiti iš ciklo paspaudus 'q'
-            print("Išeinama iš programos...")
+                    # Išsaugome aptiktą simbolį
+                    detected_symbols.append({
+                        'symbol': text,
+                        'description': description,
+                        'coordinates': (x, y, w, h)
+                    })
+
+                    # Pažymėkite simbolį ir pridėkite aprašymą
+                    cv2.putText(frame, description, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 2)  # Raudonas kvadratas
+
+        # Rodykite vaizdą
+        cv2.imshow('Live Scan', frame)
+
+        # Galite spausdinti aptiktus simbolius
+        for symbol_info in detected_symbols:
+            print(f"Detected: {symbol_info['symbol']} - Description: {symbol_info['description']} - Coordinates: {symbol_info['coordinates']}")
+
+        # Išeiti iš ciklo paspaudus 'q'
+        if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
     cap.release()
     cv2.destroyAllWindows()
 
-# Pagrindinė programa
-if __name__ == "__main__":
-    pdf_path = "Instrumentation_Symbols_and_Identification.pdf"  # Jūsų PDF failo pavadinimas
 
-    # 1. Ištraukite lentelę iš PDF
-    elements = extract_table_from_pdf(pdf_path)
-    print("Rasti elementai:", elements)
-
-    # 2. Paleiskite realų skenavimą
+elements = extract_table_from_pdf(pdf_path)  # Gaunate elementus iš PDF
+if elements:
     live_scan(elements)
+else:
+    print("Nepavyko gauti elementų iš PDF.")
