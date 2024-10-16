@@ -1,1 +1,0 @@
-{"Tanks": [{"name": "Tank 1", "type": "Atmospheric Tank", "details": "Capacity: 500L, Material: Stainless Steel"}, {"name": "Tank 2", "type": "Pressurized Tank", "details": "Capacity: 1000L, Material: Carbon Steel"}], "Pumps": [{"name": "Pump 1", "type": "Centrifugal Pump", "details": "Flow Rate: 150L/min, Power: 5HP"}]}
