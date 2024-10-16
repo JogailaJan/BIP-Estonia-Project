@@ -1,0 +1,52 @@
+import cv2
+import numpy as np
+
+# Įkelti simbolių šablonus iš PDF (čia turėtum naudoti savo išgautus šablonus)
+symbol_templates = {
+    'symbol_1': cv2.imread('symbol_1.png', 0),
+    'symbol_2': cv2.imread('symbol_2.png', 0)
+    # pridėk daugiau simbolių iš PDF failo
+}
+
+# Patikrinti, ar visi šablonai įkelti teisingai
+for name, template in symbol_templates.items():
+    if template is None:
+        print(f"Nepavyko įkelti {name} šablono!")
+        exit()
+
+# Web kameros vaizdas
+cap = cv2.VideoCapture(0)
+
+if not cap.isOpened():
+    print("Kamera nepavyko atidaryti!")
+    exit()
+
+while True:
+    ret, frame = cap.read()
+    
+    if not ret:
+        print("Nepavyko gauti vaizdo iš kameros.")
+        break
+
+    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    detected = False
+    for name, template in symbol_templates.items():
+        w, h = template.shape[::-1]
+        result = cv2.matchTemplate(gray_frame, template, cv2.TM_CCOEFF_NORMED)
+        loc = np.where(result >= 0.6)  # Nustatyti atpažinimo slenkstį
+
+        for pt in zip(*loc[::-1]):
+            cv2.rectangle(frame, pt, (pt[0] + w, pt[1] + h), (0, 255, 0), 2)
+            cv2.putText(frame, name, (pt[0], pt[1] - 10), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+            detected = True
+
+    # Rodyti vaizdą su pažymėtais simboliais
+    cv2.imshow('Detected Symbols', frame)
+
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
