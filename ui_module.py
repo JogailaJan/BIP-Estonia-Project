@@ -1,11 +1,13 @@
 # ui_module.py
 
 import ttkbootstrap as ttk
-from menu_module import MenuModule
+from ttkbootstrap.constants import *
+import tkinter as tk
 from camera_module import CameraModule
 from treeview_module import TreeViewModule
 from element_info_module import ElementInfoModule
 from element_manager import ElementManager
+from menu_module import MenuModule  # Import the custom menu module
 
 class UIModule:
     def __init__(self, root):
@@ -14,10 +16,10 @@ class UIModule:
         # Get the style for accessing theme colors
         self.style = ttk.Style()
 
-        # Initialize the main menu
+        # Initialize the custom menu module
         self.menu_module = MenuModule(self.root, self)
 
-        # Create the main frames using ttkbootstrap Frames
+        # Create the main frames below the menu bar
         self.left_frame = ttk.Frame(root)
         self.middle_frame = ttk.Frame(root)
         self.right_frame = ttk.Frame(root)
@@ -31,6 +33,7 @@ class UIModule:
         root.grid_columnconfigure(0, weight=1, minsize=200)
         root.grid_columnconfigure(1, weight=3, minsize=400)
         root.grid_columnconfigure(2, weight=1, minsize=200)
+        root.grid_rowconfigure(0, weight=0)  # Menu bar row does not expand
         root.grid_rowconfigure(1, weight=1)
 
         # Initialize components

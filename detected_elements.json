@@ -1,1 +1,1 @@
-{}
+{"Tanks": [{"name": "Atmospheric Tank", "details": {"Capacity": "500L", "Material": "Stainless Steel"}}, {"name": "Pressurized Tank", "details": {"Capacity": "1000L", "Material": "Carbon Steel"}}], "Pumps": [{"name": "Centrifugal Pump", "details": {"Flow Rate": "150L/min", "Power": "5HP"}}]}
