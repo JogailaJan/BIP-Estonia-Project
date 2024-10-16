@@ -39,8 +39,12 @@ class DetectionModule:
             }
         ]
 
-        # Update the UI with detected elements
-        self.ui_module.update_detected_elements_list(detected_elements)
+        # Schedule the UI update on the main thread
+        self.ui_module.root.after(
+            0,
+            self.ui_module.element_manager.update_detected_elements_list,
+            detected_elements
+        )
 
     def run_detection(self):
         """Continuously run element detection in a separate thread."""
@@ -53,15 +57,8 @@ class DetectionModule:
             # Simulate detection delay
             time.sleep(1)  # Adjust as needed for real detection time
 
-            # Check if a frame is available
-            if self.ui_module.current_frame is not None:
-                # Perform detection on the current frame
-                frame = self.ui_module.current_frame.copy()
-                # Here you would add real detection code
-                # For simulation, we call detect_elements
-                self.detect_elements()
-            else:
-                print("No frame available for detection")
+            # Perform detection
+            self.detect_elements()
 
     def stop_detection(self):
         self.running = False

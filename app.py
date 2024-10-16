@@ -1,7 +1,6 @@
 # app.py
 
 import ttkbootstrap as ttk
-from ttkbootstrap.constants import *
 from ui_module import UIModule
 from detection_module import DetectionModule
 
