@@ -388,18 +388,43 @@ class UIModule:
         else:
             frame_height, frame_width = 480, 640  # Default values if frame not available
 
-        # Adjust the click position according to the resized camera feed
-        for highlight in self.highlights:
-            x1, y1, x2, y2 = highlight['coords']
-            scaled_x1 = int(x1 * label_width / frame_width)
-            scaled_y1 = int(y1 * label_height / frame_height)
-            scaled_x2 = int(x2 * label_width / frame_width)
-            scaled_y2 = int(y2 * label_height / frame_height)
+        # Calculate new dimensions for the frame that fit the available space while maintaining aspect ratio
+        frame_aspect_ratio = frame_width / frame_height
+        label_aspect_ratio = label_width / label_height
 
-            if scaled_x1 <= click_x <= scaled_x2 and scaled_y1 <= click_y <= scaled_y2:
-                # Highlight clicked, mark it as selected and update information in Section 3
-                self.select_highlight(highlight['name'])
-                break  # No need to check other highlights
+        if label_aspect_ratio > frame_aspect_ratio:
+            # The label is wider than the frame
+            new_height = label_height
+            new_width = int(new_height * frame_aspect_ratio)
+        else:
+            # The label is taller than the frame
+            new_width = label_width
+            new_height = int(new_width / frame_aspect_ratio)
+
+        # Calculate offsets (if any)
+        offset_x = (label_width - new_width) // 2
+        offset_y = (label_height - new_height) // 2
+
+        # Adjust click positions
+        adjusted_click_x = click_x - offset_x
+        adjusted_click_y = click_y - offset_y
+
+        # Check if click is within the image area
+        if 0 <= adjusted_click_x < new_width and 0 <= adjusted_click_y < new_height:
+            # Map click coordinates back to frame coordinates
+            frame_x = adjusted_click_x * frame_width / new_width
+            frame_y = adjusted_click_y * frame_height / new_height
+
+            # Now check if the click is inside any highlight
+            for highlight in self.highlights:
+                x1, y1, x2, y2 = highlight['coords']
+                if x1 <= frame_x <= x2 and y1 <= frame_y <= y2:
+                    # Highlight clicked, mark it as selected and update information in Section 3
+                    self.select_highlight(highlight['name'])
+                    break  # No need to check other highlights
+        else:
+            # Click was outside the image area
+            pass
 
     def select_highlight(self, name):
         """Select a highlight by name, change its color, and display its info."""
