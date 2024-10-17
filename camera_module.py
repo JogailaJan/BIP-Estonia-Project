@@ -35,11 +35,12 @@ class CameraModule:
         while self.running:
             ret, frame = self.cap.read()
             if ret:
-                self.current_frame = frame
+                self.current_frame = frame.copy()  # Use a copy of the frame
             else:
                 print("Failed to read from camera")
                 self.running = False
             time.sleep(0.01)
+
 
     def update_gui_frame(self):
         if self.current_frame is not None:

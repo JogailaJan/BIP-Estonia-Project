@@ -12,12 +12,15 @@ class DetectionModule:
         self.running = True  # Flag to control the detection thread
         
         # Load your trained YOLO model (use the path to your `best.pt` model)
-        self.model = YOLO('runs/detect/train19/weights/best.pt')
+        self.model = YOLO('runs/detect/train19/weights/yolov8n.pt')
 
     def detect_elements(self, frame):
         """Use YOLO to detect elements in the frame."""
-        # Perform YOLO inference on the camera frame
-        results = self.model.predict(frame)
+        # If necessary, convert frame back to BGR for YOLO (OpenCV uses BGR, but detection could require RGB)
+        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        
+        # Perform YOLO inference
+        results = self.model.predict(frame_bgr)
         
         detected_elements = []
         
@@ -45,20 +48,27 @@ class DetectionModule:
         )
 
     def run_detection(self):
-        """Continuously run element detection in a separate thread."""
+        """Start the detection thread."""
+        print("Starting detection thread...")  # Debugging print
         self.detection_thread = threading.Thread(target=self.detection_loop)
         self.detection_thread.daemon = True  # Daemonize thread
         self.detection_thread.start()
 
+
     def detection_loop(self):
+        """Continuously run element detection in a separate thread."""
         while self.running:
             if self.ui_module.camera_module.current_frame is not None:
+                print("Running detection...")  # Debugging print
                 # Perform detection on the current frame from the camera
-                frame = self.ui_module.camera_module.current_frame
+                frame = self.ui_module.camera_module.current_frame.copy()  # Ensure you're working on a copy
                 self.detect_elements(frame)
-            
+            else:
+                print("No frame available yet.")  # Debugging print
+
             # Adjust the sleep time as needed for real-time performance
             time.sleep(0.1)  # e.g., 10 FPS
+
 
     def stop_detection(self):
         self.running = False
