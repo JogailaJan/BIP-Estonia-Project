@@ -2,43 +2,41 @@
 
 import threading
 import time
+import cv2
+from ultralytics import YOLO
 
 class DetectionModule:
     def __init__(self, ui_module):
         """Initialize with a reference to the UI module."""
         self.ui_module = ui_module
         self.running = True  # Flag to control the detection thread
+        
+        # Load your trained YOLO model (use the path to your `best.pt` model)
+        self.model = YOLO('runs/detect/train19/weights/best.pt')
 
-    def detect_elements(self):
-        """Simulate the element detection logic."""
-        # Simulated stable detection with details and bounding box coordinates
-        detected_elements = [
-            {
-                'name': 'Atmospheric Tank',
-                'details': {
-                    'Capacity': '500L',
-                    'Material': 'Stainless Steel'
-                },
-                'highlight_coordinates': (50, 50, 150, 150)
-            },
-            {
-                'name': 'Pressurized Tank',
-                'details': {
-                    'Capacity': '1000L',
-                    'Material': 'Carbon Steel'
-                },
-                'highlight_coordinates': (200, 100, 300, 200)
-            },
-            {
-                'name': 'Centrifugal Pump',
-                'details': {
-                    'Flow Rate': '150L/min',
-                    'Power': '5HP'
-                },
-                'highlight_coordinates': (350, 150, 450, 250)
-            }
-        ]
-
+    def detect_elements(self, frame):
+        """Use YOLO to detect elements in the frame."""
+        # Perform YOLO inference on the camera frame
+        results = self.model.predict(frame)
+        
+        detected_elements = []
+        
+        # Extract results
+        for result in results:
+            for box in result.boxes:
+                x1, y1, x2, y2 = map(int, box.xyxy[0])  # Bounding box coordinates
+                label = self.model.names[int(box.cls[0])]  # Class label
+                confidence = box.conf[0]  # Confidence score
+                
+                # Example: Store detected element details
+                detected_elements.append({
+                    'name': label,
+                    'details': {
+                        'Confidence': f"{confidence:.2f}"
+                    },
+                    'highlight_coordinates': (x1, y1, x2, y2)
+                })
+        
         # Schedule the UI update on the main thread
         self.ui_module.root.after(
             0,
@@ -54,11 +52,13 @@ class DetectionModule:
 
     def detection_loop(self):
         while self.running:
-            # Simulate detection delay
-            time.sleep(1)  # Adjust as needed for real detection time
-
-            # Perform detection
-            self.detect_elements()
+            if self.ui_module.camera_module.current_frame is not None:
+                # Perform detection on the current frame from the camera
+                frame = self.ui_module.camera_module.current_frame
+                self.detect_elements(frame)
+            
+            # Adjust the sleep time as needed for real-time performance
+            time.sleep(0.1)  # e.g., 10 FPS
 
     def stop_detection(self):
         self.running = False
