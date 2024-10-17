@@ -1,5 +1,3 @@
-# camera_module.py
-
 import cv2
 import threading
 import time
@@ -18,11 +16,12 @@ class CameraModule:
         self.running = True
 
         # Initialize the camera
-        self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        self.cap = cv2.VideoCapture(0)  # Removed CAP_DSHOW to test if the issue is flag-related
         if not self.cap.isOpened():
             print("Cannot open camera")
             self.running = False
         else:
+            print("Camera opened successfully")
             # Start the camera thread
             self.camera_thread = threading.Thread(target=self.camera_loop)
             self.camera_thread.daemon = True
@@ -40,7 +39,6 @@ class CameraModule:
                 print("Failed to read from camera")
                 self.running = False
             time.sleep(0.01)
-
 
     def update_gui_frame(self):
         if self.current_frame is not None:

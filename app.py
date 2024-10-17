@@ -9,6 +9,7 @@ def main():
     root = ttk.Window(themename="darkly")
     root.title("PID Scheme Detection")
     root.geometry("1200x800")
+    
 
     # Initialize the UI module
     ui = UIModule(root)
