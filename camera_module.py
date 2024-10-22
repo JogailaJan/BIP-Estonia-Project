@@ -6,6 +6,34 @@ import time  # Standard library used to add delays (sleep) in the camera loop
 from PIL import Image, ImageTk, ImageDraw, ImageFont  # PIL (Python Imaging Library) used to process images and display them in Tkinter
 import tkinter as tk  # Tkinter is a standard Python library for creating graphical user interfaces (GUIs)
 
+def confidence_to_color(confidence):
+    """
+    Map a confidence level (0 to 1) to a color ranging from red to green.
+    """
+    # Ensure confidence is between 0 and 1
+    confidence = max(0, min(1, confidence))
+
+    
+    if confidence <= 0.25:
+        # Interpolate between red and orange (0 to 25% confidence)
+        return interpolate_color((255, 0, 0), (255, 165, 0), confidence / 0.25)
+    elif confidence <= 0.50:
+        # Interpolate between orange and yellow (25% to 50% confidence)
+        return interpolate_color((255, 165, 0), (255, 255, 0), (confidence - 0.25) / 0.25)
+    elif confidence <= 0.75:
+        # Interpolate between yellow and green (50% to 75% confidence)
+        return interpolate_color((255, 255, 0), (0, 255, 0), (confidence - 0.50) / 0.25)
+    else:
+        # Green for high confidence (75% to 100%)
+        return (0, 255, 0)
+        
+def interpolate_color(color1, color2, factor):
+    """
+    Linearly interpolate between two RGB colors by a given factor (0 to 1).
+    """
+    return tuple(int(color1[i] + (color2[i] - color1[i]) * factor) for i in range(3))
+
+
 # The CameraModule class manages the camera feed, displaying it in a GUI, and allows interaction with highlighted areas
 class CameraModule:
     def __init__(self, parent_frame, ui_module):
@@ -101,7 +129,7 @@ class CameraModule:
                 self.running = False  # Stop the camera loop if there's a failure
             time.sleep(0.03)  # Pause for a brief moment (30 milliseconds) to avoid overloading the system
 
-    # Function to update the GUI with the current camera frame, scaling it to fit the window
+
     def update_gui_frame(self):
         if self.current_frame is not None:  # If there is a valid frame to display
             frame = self.current_frame.copy()  # Make a copy of the frame for further processing
@@ -122,7 +150,7 @@ class CameraModule:
                     new_width = int(new_height * frame_aspect_ratio)  # Calculate the width that maintains the aspect ratio
                 else:
                     new_width = label_width  # Use the full width of the label
-                    new_height = int(new_width / frame_aspect_ratio)  # Calculate the height that maintains the aspect ratio
+                    new_height = int(new_width / frame_aspect_ratio)
 
                 # Convert the OpenCV BGR frame (Blue-Green-Red color format) to RGB format for displaying with Tkinter
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -138,7 +166,30 @@ class CameraModule:
 
                 # Loop through the highlights (regions of interest) to draw them on the camera feed
                 for highlight in self.ui_module.element_manager.highlights:
-                    color = "#FF5733" if highlight['selected'] else "#3380FF"  # Use different colors for selected/non-selected elements
+                    element_id = highlight['id']
+                    element_name = ""
+                    confidence = 0.0
+
+                    # Get the element details including confidence score
+                    for category, elements in self.ui_module.element_manager.detected_elements.items():
+                        for element in elements:
+                            if element['id'] == element_id:
+                                element_name = element['name']
+                                confidence = float(element['details'].get('Confidence', 0))  # Get confidence score
+
+                    # Normalize confidence (0-1)
+                    confidence_percentage = confidence if confidence <= 1 else confidence / 100
+
+                    # Set color based on whether the element is selected
+                    if highlight['selected']:
+                        # Bright cyan for selected element
+                        color_rgb = (0, 255, 255)  # Cyan
+                    else:
+                        # Color based on confidence level
+                        color_rgb = confidence_to_color(confidence_percentage)
+
+                    # Convert RGB to hex for drawing
+                    color = f'#{color_rgb[0]:02x}{color_rgb[1]:02x}{color_rgb[2]:02x}'  # Convert RGB to hex
 
                     # Scale the highlight coordinates to match the resized image
                     scaled_coords = [
@@ -149,9 +200,10 @@ class CameraModule:
                     ]
                     draw.rectangle(scaled_coords, outline=color, width=2)  # Draw a rectangle around the highlighted area
 
-                    # Position the text label slightly above the highlighted area
+                    # Position the text label slightly above the highlighted area with confidence level
                     text_position = (scaled_coords[0], scaled_coords[1] - 20)
-                    draw.text(text_position, highlight['name'], fill=color, font=font)  # Draw the name of the element
+                    display_text = f"{element_name} ({confidence:.2f})"  # Name + Confidence
+                    draw.text(text_position, display_text, fill=color, font=font)  # Draw the name with confidence
 
                 # Convert the PIL image back to a format that Tkinter can display
                 imgtk = ImageTk.PhotoImage(image=img)
@@ -160,6 +212,7 @@ class CameraModule:
 
         # Schedule this function to run again after 30 milliseconds to create a smooth update loop
         self.ui_module.root.after(30, self.update_gui_frame)
+
 
     # Function to stop the camera and clean up resources
     def release_resources(self):
