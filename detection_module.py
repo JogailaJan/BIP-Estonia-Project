@@ -13,7 +13,7 @@ class DetectionModule:
         
         # Load your trained YOLO model (use the path to your `best.pt` model)
         self.model = YOLO('runs/detect/yolo8n_v8_50e/weights/best.pt')
-
+        # self.model = YOLO('runs/detect/yolo8n_v8_50e/weights/best.pt')
     def detect_elements(self, frame):
         """Use YOLO to detect elements in the frame."""
         # If necessary, convert frame back to BGR for YOLO (OpenCV uses BGR, but detection could require RGB)
