@@ -4,6 +4,23 @@ import threading
 import time
 import cv2
 from ultralytics import YOLO
+import sys
+import os
+from contextlib import contextmanager
+
+# Trying to get rid of the constant logging from the YOLO model
+@contextmanager
+def suppress_output():
+    with open(os.devnull, 'w') as devnull:
+        old_stdout = sys.stdout
+        old_stderr = sys.stderr
+        sys.stdout = devnull
+        sys.stderr = devnull
+        try:
+            yield
+        finally:
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
 
 class DetectionModule:
     def __init__(self, ui_module):
@@ -12,15 +29,15 @@ class DetectionModule:
         self.running = True  # Flag to control the detection thread
         
         # Load your trained YOLO model (use the path to your `best.pt` model)
-        self.model = YOLO('runs/detect/yolo8n_v8_50e/weights/best.pt')
-        # self.model = YOLO('runs/detect/yolo8n_v8_50e/weights/best.pt')
+        self.model = YOLO('best.pt', verbose=False)
+    
     def detect_elements(self, frame):
         """Use YOLO to detect elements in the frame."""
-        # If necessary, convert frame back to BGR for YOLO (OpenCV uses BGR, but detection could require RGB)
         frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         
-        # Perform YOLO inference
-        results = self.model.predict(frame_bgr)
+        # Suppress the YOLO model output when running inference
+        with suppress_output():
+            results = self.model.predict(frame_bgr)
         
         detected_elements = []
         
@@ -31,7 +48,7 @@ class DetectionModule:
                 label = self.model.names[int(box.cls[0])]  # Class label
                 confidence = box.conf[0]  # Confidence score
                 
-                # Example: Store detected element details
+                # Store detected element details
                 detected_elements.append({
                     'name': label,
                     'details': {
@@ -46,6 +63,7 @@ class DetectionModule:
             self.ui_module.element_manager.update_detected_elements_list,
             detected_elements
         )
+
 
     def run_detection(self):
         """Start the detection thread."""

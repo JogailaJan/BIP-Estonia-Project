@@ -1,9 +1,12 @@
-# menu_module.py
+#menu_module.py
 
+
+from tkinter import simpledialog, filedialog, messagebox
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 import tkinter as tk
-from tkinter import messagebox
+from database_module import store_image, get_all_elements, get_element_by_name  # Handles saving and loading images from the database
+import threading
 
 class MenuModule:
     def __init__(self, root, ui_module):
@@ -26,16 +29,11 @@ class MenuModule:
             focusthickness=0,
             highlightthickness=0
         )
-        self.style.map(
-            "CustomButton.TButton",
-            background=[('active', self.style.colors.selectbg)],
-            foreground=[('active', self.style.colors.selectfg)]
-        )
 
         # Initialize the menu bar buttons
         self.menu_buttons = {}
-        self.menu_items = ['File', 'Edit', 'Help']
-        self.current_menu = None  # To track the currently open menu
+        self.menu_items = ['File']
+        self.current_menu = None
 
         for idx, menu_name in enumerate(self.menu_items):
             btn = ttk.Button(
@@ -44,65 +42,30 @@ class MenuModule:
                 style="CustomButton.TButton",
                 command=lambda mn=menu_name: self.show_menu(mn)
             )
-            # Set padx to a small value and align buttons to the left
-            btn.grid(row=0, column=idx, padx=(5 if idx == 0 else 2), pady=2, sticky='w')
+            btn.grid(row=0, column=idx, padx=5, pady=2, sticky='w')
             self.menu_buttons[menu_name] = btn
 
-            # Bind events for hover behavior
-            btn.bind("<Enter>", lambda event, mn=menu_name: self.on_menu_button_hover(mn))
-
         # Configure the menu bar frame to expand horizontally
-        # Set weight=0 for columns with buttons so they don't expand
         for idx in range(len(self.menu_items)):
             self.menu_bar_frame.columnconfigure(idx, weight=0)
-
-        # Add an extra column to push buttons to the left
         self.menu_bar_frame.columnconfigure(len(self.menu_items), weight=1)
 
     def show_menu(self, menu_name):
-        # Close any existing menu
         self.close_current_menu()
-
-        # Create a new Menu widget
-        self.current_menu = tk.Menu(
-            self.root,
-            tearoff=0,
-            background=self.style.colors.bg,
-            foreground=self.style.colors.fg,
-            activebackground=self.style.colors.selectbg,
-            activeforeground=self.style.colors.selectfg,
-            bd=0,
-            relief='flat'
-        )
+        self.current_menu = tk.Menu(self.root, tearoff=0)
 
         if menu_name == 'File':
-            self.current_menu.add_command(label="Open", command=self.open_file)
-            self.current_menu.add_command(label="Save", command=self.save_file)
+            self.current_menu.add_command(label="Save Scheme to Database", command=self.save_scheme)
+            self.current_menu.add_command(label="Load Scheme from Database", command=self.load_scheme)
             self.current_menu.add_separator()
-            self.current_menu.add_command(label="Exit", command=self.exit_application)
-        elif menu_name == 'Edit':
-            self.current_menu.add_command(label="Undo", command=self.undo_action)
-            self.current_menu.add_command(label="Redo", command=self.redo_action)
-        elif menu_name == 'Help':
-            self.current_menu.add_command(label="About", command=self.show_about_info)
+            self.current_menu.add_command(label="Reset to Live Detection", command=self.reset_to_live_detection)
 
-        # Get the button widget to position the menu
         btn = self.menu_buttons[menu_name]
-        # Get the button's position
         x = btn.winfo_rootx()
         y = btn.winfo_rooty() + btn.winfo_height()
-
-        # Display the menu
         self.current_menu.tk_popup(x, y)
         self.current_menu.grab_release()
-
-        # Bind the root window to detect clicks outside the menu
         self.root.bind("<Button-1>", self.on_click_outside_menu)
-
-    def on_menu_button_hover(self, menu_name):
-        if self.current_menu:
-            # Show the new menu
-            self.show_menu(menu_name)
 
     def close_current_menu(self):
         if self.current_menu:
@@ -111,33 +74,94 @@ class MenuModule:
             self.root.unbind("<Button-1>")
 
     def on_click_outside_menu(self, event):
-        # Close the menu if clicked outside
         widget = event.widget
         if self.current_menu and not any(widget is btn for btn in self.menu_buttons.values()):
             self.close_current_menu()
 
-    # Command methods for the menu items
-    def open_file(self):
-        print("Open file action")
-        self.close_current_menu()
+    def save_scheme(self):
+        scheme_name = simpledialog.askstring("Save Scheme", "Enter a name for the scheme:")
+        frame = self.ui_module.camera_module.get_current_frame()
+        if frame is None:
+            messagebox.showwarning("Warning", "No live feed available to save.")
+            return
 
-    def save_file(self):
-        self.ui_module.save_elements_to_json('detected_elements.json')
-        print("Save file action")
-        self.close_current_menu()
+        # Store the scheme in the database
+        if scheme_name:
+            store_image(frame, scheme_name)
+            messagebox.showinfo("Success", f"Scheme '{scheme_name}' saved successfully!")
 
-    def exit_application(self):
-        self.ui_module.release_resources()
-        self.root.quit()
+    def load_scheme(self):
+        """Fetch schemes in a background thread and display a dialog in the main thread."""
+        def fetch_schemes():
+            try:
+                # Fetch the list of schemes from the database
+                elements = get_all_elements()
+                if not elements:
+                    self.root.after(0, lambda: messagebox.showinfo("No Schemes", "No saved schemes are available."))
+                    return
 
-    def undo_action(self):
-        print("Undo action")
-        self.close_current_menu()
+                # Filter out schemes that have image_name
+                schemes = []
+                for element in elements:
+                    if isinstance(element, dict) and "image_name" in element:
+                        schemes.append(element["image_name"])
 
-    def redo_action(self):
-        print("Redo action")
-        self.close_current_menu()
+                if not schemes:
+                    self.root.after(0, lambda: messagebox.showinfo("No Schemes", "No saved schemes are available."))
+                    return
 
-    def show_about_info(self):
-        messagebox.showinfo("About", "PID Scheme Detection Application\nVersion 1.0")
+                # Schedule the dialog prompt to run in the main thread
+                self.root.after(0, lambda: self.prompt_for_scheme(schemes))
+                
+            except Exception as e:
+                print(f"Error fetching schemes: {e}")
+                self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to fetch schemes: {str(e)}"))
+
+        # Run the fetch_schemes function in a background thread
+        threading.Thread(target=fetch_schemes, daemon=True).start()
+
+    def prompt_for_scheme(self, schemes):
+        """Prompt the user to select a scheme in the main thread."""
+        schemes_list = "\n".join(f"* {scheme}" for scheme in schemes)
+        scheme_name = simpledialog.askstring(
+            "Load Scheme",
+            f"Available schemes:\n{schemes_list}\n\nEnter scheme name:"
+        )
+
+        if not scheme_name:
+            return
+
+        scheme_name = scheme_name.strip()
+        
+        # Debug print statements
+        print(f"User entered scheme name: '{scheme_name}'")
+        print(f"Available schemes: {schemes}")
+        
+        if scheme_name in schemes:
+            print(f"Attempting to load scheme: '{scheme_name}'")
+            try:
+                # First verify the scheme exists in database
+                scheme_data = get_element_by_name(scheme_name)
+                if scheme_data and "image_data" in scheme_data:
+                    # Stop the camera feed before loading image
+                    self.ui_module.camera_module.live_mode = False
+                    # Load the selected scheme from the database and display it
+                    success = self.ui_module.camera_module.load_image_from_database(scheme_name)
+                    if not success:
+                        messagebox.showerror("Error", f"Failed to load scheme '{scheme_name}'")
+                else:
+                    print(f"Scheme data not found in database for '{scheme_name}'")
+                    messagebox.showwarning("Warning", 
+                                         f"Scheme '{scheme_name}' exists but data could not be loaded.\n\nAvailable schemes are:\n{schemes_list}")
+            except Exception as e:
+                print(f"Error loading scheme: {e}")
+                messagebox.showerror("Error", f"Failed to load scheme: {str(e)}")
+        else:
+            messagebox.showwarning("Warning", 
+                                 f"Scheme '{scheme_name}' not found.\n\nAvailable schemes are:\n{schemes_list}")
+
+
+    def reset_to_live_detection(self):
+        self.ui_module.camera_module.reset_to_live_detection()
+        messagebox.showinfo("Live Detection", "Camera feed restored to live detection mode.")
         self.close_current_menu()

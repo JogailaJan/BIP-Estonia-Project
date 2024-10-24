@@ -5,6 +5,11 @@ import threading  # Library for running tasks in parallel threads, allowing the 
 import time  # Standard library used to add delays (sleep) in the camera loop
 from PIL import Image, ImageTk, ImageDraw, ImageFont  # PIL (Python Imaging Library) used to process images and display them in Tkinter
 import tkinter as tk  # Tkinter is a standard Python library for creating graphical user interfaces (GUIs)
+import io
+from database_module import get_element_by_name
+from tkinter import messagebox
+import numpy as np
+
 
 def confidence_to_color(confidence):
     """
@@ -37,31 +42,25 @@ def interpolate_color(color1, color2, factor):
 # The CameraModule class manages the camera feed, displaying it in a GUI, and allows interaction with highlighted areas
 class CameraModule:
     def __init__(self, parent_frame, ui_module):
-        self.ui_module = ui_module  # Reference to another part of the program (ui_module), which manages GUI and highlights
-
-        # Create a label widget in the Tkinter window to display the camera feed
+        self.ui_module = ui_module
+        self.live_mode = True
         self.camera_label = tk.Label(parent_frame)
-        self.camera_label.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)  # Make the label fill the available space
-
-        # Bind mouse click events to a custom function (self.on_camera_click) that will handle clicks on the camera feed
+        self.camera_label.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
         self.camera_label.bind("<Button-1>", self.on_camera_click)
-
-        self.current_frame = None  # Will hold the current frame captured from the camera
-        self.running = True  # A flag to keep the camera running in the background
-
-        # Initialize the camera using OpenCV (0 is the default camera on the system)
-        self.cap = cv2.VideoCapture(0)  # OpenCV's method to access the camera
-        if not self.cap.isOpened():  # Check if the camera opened successfully
-            print("Cannot open camera")  # Print an error if the camera cannot be accessed
-            self.running = False  # Stop further processing if no camera is available
+        
+        self.current_frame = None
+        self.loaded_image = None  # New attribute to store loaded image
+        self.running = True
+        
+        self.cap = cv2.VideoCapture(0)
+        if not self.cap.isOpened():
+            print("Cannot open camera")
+            self.running = False
         else:
-            print("Camera opened successfully")  # Indicate that the camera opened correctly
-            # Start a background thread to capture frames from the camera
+            print("Camera opened successfully")
             self.camera_thread = threading.Thread(target=self.camera_loop)
-            self.camera_thread.daemon = True  # Mark the thread as a daemon, so it closes when the main program exits
-            self.camera_thread.start()  # Start the camera thread
-
-            # Start updating the GUI to display the frames captured from the camera
+            self.camera_thread.daemon = True
+            self.camera_thread.start()
             self.update_gui_frame()
 
     # Function to handle mouse clicks on the camera feed
@@ -118,109 +117,156 @@ class CameraModule:
             # If the click is outside the image area, do nothing
             pass
 
-    # Function running in a separate thread to continuously capture frames from the camera
     def camera_loop(self):
-        while self.running:  # Keep looping while the camera is running
-            ret, frame = self.cap.read()  # Read a frame from the camera (ret is a success flag, frame is the actual image)
-            if ret:  # If the frame was captured successfully
-                self.current_frame = frame.copy()  # Make a copy of the frame (to avoid altering the original data)
-            else:
-                print("Failed to read from camera")  # Print an error if the frame capture fails
-                self.running = False  # Stop the camera loop if there's a failure
-            time.sleep(0.03)  # Pause for a brief moment (30 milliseconds) to avoid overloading the system
-
+        """Capture frames from the camera when live_mode is True."""
+        while self.running:
+            if self.live_mode:
+                ret, frame = self.cap.read()
+                if ret:
+                    self.current_frame = frame.copy()
+                else:
+                    print("Failed to read from camera")
+                    self.running = False
+            time.sleep(0.03)
 
     def update_gui_frame(self):
-        if self.current_frame is not None:  # If there is a valid frame to display
-            frame = self.current_frame.copy()  # Make a copy of the frame for further processing
-            frame_height, frame_width = frame.shape[:2]  # Get the frame's dimensions (height and width)
-            frame_aspect_ratio = frame_width / frame_height  # Calculate the aspect ratio of the frame
-
-            # Get the dimensions of the label in the GUI (this is where the camera feed is displayed)
-            label_width = self.camera_label.winfo_width()
-            label_height = self.camera_label.winfo_height()
-
-            # Make sure the label dimensions are valid (non-zero) before proceeding
-            if label_width > 0 and label_height > 0:
-                label_aspect_ratio = label_width / label_height  # Calculate the aspect ratio of the label
-
-                # Determine the best size for the frame, scaling it to fit inside the label while maintaining the aspect ratio
-                if label_aspect_ratio > frame_aspect_ratio:
-                    new_height = label_height  # Use the full height of the label
-                    new_width = int(new_height * frame_aspect_ratio)  # Calculate the width that maintains the aspect ratio
-                else:
-                    new_width = label_width  # Use the full width of the label
-                    new_height = int(new_width / frame_aspect_ratio)
-
-                # Convert the OpenCV BGR frame (Blue-Green-Red color format) to RGB format for displaying with Tkinter
-                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                img = Image.fromarray(frame_rgb)  # Convert the frame into a PIL image
-                img = img.resize((new_width, new_height))  # Resize the image to fit the label dimensions
-                draw = ImageDraw.Draw(img)  # Create an object for drawing on the image
-
-                # Try to load a custom font (arial.ttf), or use a default font if the custom font isn't available
-                try:
-                    font = ImageFont.truetype("arial.ttf", 16)
-                except IOError:
-                    font = ImageFont.load_default()
-
-                # Loop through the highlights (regions of interest) to draw them on the camera feed
-                for highlight in self.ui_module.element_manager.highlights:
-                    element_id = highlight['id']
-                    element_name = ""
-                    confidence = 0.0
-
-                    # Get the element details including confidence score
-                    for category, elements in self.ui_module.element_manager.detected_elements.items():
-                        for element in elements:
-                            if element['id'] == element_id:
-                                element_name = element['name']
-                                confidence = float(element['details'].get('Confidence', 0))  # Get confidence score
-
-                    # Normalize confidence (0-1)
-                    confidence_percentage = confidence if confidence <= 1 else confidence / 100
-
-                    # Set color based on whether the element is selected
-                    if highlight['selected']:
-                        # Bright cyan for selected element
-                        color_rgb = (0, 255, 255)  # Cyan
-                    else:
-                        # Color based on confidence level
-                        color_rgb = confidence_to_color(confidence_percentage)
-
-                    # Convert RGB to hex for drawing
-                    color = f'#{color_rgb[0]:02x}{color_rgb[1]:02x}{color_rgb[2]:02x}'  # Convert RGB to hex
-
-                    # Scale the highlight coordinates to match the resized image
-                    scaled_coords = [
-                        int(highlight['coords'][0] * new_width / frame_width),
-                        int(highlight['coords'][1] * new_height / frame_height),
-                        int(highlight['coords'][2] * new_width / frame_width),
-                        int(highlight['coords'][3] * new_height / frame_height),
-                    ]
-                    draw.rectangle(scaled_coords, outline=color, width=2)  # Draw a rectangle around the highlighted area
-
-                    # Position the text label slightly above the highlighted area with confidence level
-                    text_position = (scaled_coords[0], scaled_coords[1] - 20)
-                    display_text = f"{element_name} ({confidence:.2f})"  # Name + Confidence
-                    draw.text(text_position, display_text, fill=color, font=font)  # Draw the name with confidence
-
-                # Convert the PIL image back to a format that Tkinter can display
-                imgtk = ImageTk.PhotoImage(image=img)
-                self.camera_label.imgtk = imgtk  # Store the image reference to prevent it from being garbage collected
-                self.camera_label.configure(image=imgtk)  # Update the label with the new image
-
-        # Schedule this function to run again after 30 milliseconds to create a smooth update loop
+        """Update the GUI with either camera feed or loaded image."""
+        if not self.live_mode and self.loaded_image is not None:
+            # Display loaded image
+            self.display_loaded_image()
+        elif self.live_mode and self.current_frame is not None:
+            # Display camera feed
+            self.display_camera_frame()
+            
+        # Schedule next update
         self.ui_module.root.after(30, self.update_gui_frame)
 
+    def display_camera_frame(self):
+        """Display the current camera frame with highlights."""
+        frame = self.current_frame.copy()
+        frame_height, frame_width = frame.shape[:2]
+        frame_aspect_ratio = frame_width / frame_height
 
-    # Function to stop the camera and clean up resources
-    def release_resources(self):
-        # Stop the camera loop by setting the running flag to False
-        self.running = False
-        if hasattr(self, 'camera_thread'):  # If the camera thread exists
-            self.camera_thread.join()  # Wait for the camera thread to finish
-        # Release the camera resource (close the connection to the camera)
-        if self.cap and self.cap.isOpened():
-            self.cap.release()
-        print("Camera resources released")  # Confirm that the resources have been released
+        label_width = self.camera_label.winfo_width()
+        label_height = self.camera_label.winfo_height()
+
+        if label_width > 0 and label_height > 0:
+            label_aspect_ratio = label_width / label_height
+
+            if label_aspect_ratio > frame_aspect_ratio:
+                new_height = label_height
+                new_width = int(new_height * frame_aspect_ratio)
+            else:
+                new_width = label_width
+                new_height = int(new_width / frame_aspect_ratio)
+
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            img = Image.fromarray(frame_rgb)
+            img = img.resize((new_width, new_height))
+            self.draw_highlights(img, frame_width, frame_height, new_width, new_height)
+            
+            imgtk = ImageTk.PhotoImage(image=img)
+            self.camera_label.imgtk = imgtk
+            self.camera_label.configure(image=imgtk)
+
+    def display_loaded_image(self):
+        """Display the loaded image with highlights."""
+        if self.loaded_image:
+            label_width = self.camera_label.winfo_width()
+            label_height = self.camera_label.winfo_height()
+            
+            if label_width > 0 and label_height > 0:
+                img_width, img_height = self.loaded_image.size
+                img_aspect_ratio = img_width / img_height
+                label_aspect_ratio = label_width / label_height
+
+                if label_aspect_ratio > img_aspect_ratio:
+                    new_height = label_height
+                    new_width = int(new_height * img_aspect_ratio)
+                else:
+                    new_width = label_width
+                    new_height = int(new_width / img_aspect_ratio)
+
+                img = self.loaded_image.resize((new_width, new_height))
+                self.draw_highlights(img, img_width, img_height, new_width, new_height)
+                
+                imgtk = ImageTk.PhotoImage(image=img)
+                self.camera_label.imgtk = imgtk
+                self.camera_label.configure(image=imgtk)
+
+    def draw_highlights(self, img, orig_width, orig_height, new_width, new_height):
+        """Draw highlights on the image."""
+        draw = ImageDraw.Draw(img)
+        try:
+            font = ImageFont.truetype("arial.ttf", 16)
+        except IOError:
+            font = ImageFont.load_default()
+
+        for highlight in self.ui_module.element_manager.highlights:
+            element_id = highlight['id']
+            element_name = ""
+            confidence = 0.0
+
+            for category, elements in self.ui_module.element_manager.detected_elements.items():
+                for element in elements:
+                    if element['id'] == element_id:
+                        element_name = element['name']
+                        confidence = float(element['details'].get('Confidence', 0))
+
+            confidence_percentage = confidence if confidence <= 1 else confidence / 100
+
+            if highlight['selected']:
+                color_rgb = (0, 255, 255)
+            else:
+                color_rgb = confidence_to_color(confidence_percentage)
+
+            color = f'#{color_rgb[0]:02x}{color_rgb[1]:02x}{color_rgb[2]:02x}'
+
+            scaled_coords = [
+                int(highlight['coords'][0] * new_width / orig_width),
+                int(highlight['coords'][1] * new_height / orig_height),
+                int(highlight['coords'][2] * new_width / orig_width),
+                int(highlight['coords'][3] * new_height / orig_height),
+            ]
+            
+            draw.rectangle(scaled_coords, outline=color, width=2)
+            text_position = (scaled_coords[0], scaled_coords[1] - 20)
+            display_text = f"{element_name} ({confidence:.2f})"
+            draw.text(text_position, display_text, fill=color, font=font)
+
+    def load_image_from_database(self, scheme_name):
+        """Load a scheme from the database and display it instead of the live camera feed."""
+        try:
+            print(f"Looking for scheme: '{scheme_name}'")
+            scheme_data = get_element_by_name(scheme_name)
+            
+            if not scheme_data:
+                print(f"No scheme data found for '{scheme_name}'")
+                return False
+                
+            if "image_data" not in scheme_data:
+                print(f"No image data found in scheme '{scheme_name}'")
+                return False
+                
+            image_data = scheme_data["image_data"]
+            
+            # Convert binary data to PIL Image
+            self.loaded_image = Image.open(io.BytesIO(image_data))
+            self.live_mode = False  # Stop camera feed
+            
+            # Convert PIL Image to numpy array for compatibility with existing code
+            frame_array = cv2.cvtColor(np.array(self.loaded_image), cv2.COLOR_RGB2BGR)
+            self.current_frame = frame_array
+            
+            print(f"Successfully loaded scheme '{scheme_name}'")
+            messagebox.showinfo("Success", f"Scheme '{scheme_name}' loaded successfully!")
+            return True
+            
+        except Exception as e:
+            print(f"Error loading scheme '{scheme_name}': {e}")
+            return False
+
+    def reset_to_live_detection(self):
+        """Reset the camera feed to live detection mode."""
+        self.loaded_image = None  # Clear loaded image
+        self.live_mode = True  # Turn on live mode

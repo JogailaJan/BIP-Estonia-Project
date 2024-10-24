@@ -24,11 +24,9 @@ def main():
     try:
         root.mainloop()
     finally:
-        # After the session ends, save the detected elements to a file
-        ui.save_elements_to_json('detected_elements.json')
         # Release resources
         detection.stop_detection()
-        ui.release_resources()
+        # ui.release_resources()
 
 if __name__ == "__main__":
     main()
