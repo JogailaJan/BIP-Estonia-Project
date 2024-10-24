@@ -30,6 +30,38 @@ class DetectionModule:
         
         # Load your trained YOLO model (use the path to your `best.pt` model)
         self.model = YOLO('best.pt', verbose=False)
+        self.model.model.names = {0:"Gate Valve",
+                     1:"Ball Valve",
+                     2:"Globe Valve",
+                     3:"Two-way Valve",
+                     4:"Plug Valve",
+                     5:"Butterfly Valve",
+                     6:"Manual Operated Valve",
+                     7:"Check Valve",
+                     8:"Diaphragm Valve",
+                     9:"Needle Valve",
+                     10:"Self-Operating Gate Valve",
+                     11:"Closed Gate Valve",
+                     12:"Closed Globe Valve",
+                     13:"Pneumatic Valve",
+                     14:"Rotary Valve",
+                     15:"Closed Rotary Valve",
+                     16:"Open Spacer",
+                     17:"Closed Spectacle Blind",
+                     18:"Open Spectacle Blind",
+                     19:"Reducer",
+                     20:"Post Indicator Valve",
+                     21:"Filter",
+                     22:"Scale",
+                     23:"Plug",
+                     24:"Fire Hydrant",
+                     25:"Indicator",
+                     26:"Indicator",
+                     27:"On Central Control Panel ",
+                     28:"On Local Control Panel",
+                     29:"Station",
+                     30:"Shared Indicator",
+                     31:"Level Gauge"}
     
     def detect_elements(self, frame):
         """Use YOLO to detect elements in the frame."""
