@@ -52,15 +52,6 @@ class TreeViewModule:
         self.category_tree.tag_configure('category', font=("Helvetica", 13, "bold"))
         self.category_tree.tag_configure('element', font=("Helvetica", 12))
 
-    def add_element(self, category, display_name, unique_id):
-        """Add element to TreeView with a unique ID."""
-        category_node = self.get_or_create_category_node(category)
-        for item_id in self.category_tree.get_children(category_node):
-            if self.category_tree.item(item_id, 'text') == display_name:
-                return
-        self.category_tree.insert(category_node, "end", text=display_name, values=[unique_id], tags=('element',))
-        self.apply_treeview_styles()
-
     def select_treeview_item_by_id(self, element_id):
         """Select TreeView item by unique ID."""
         for category_item in self.category_tree.get_children():
@@ -76,13 +67,19 @@ class TreeViewModule:
                 return item_id
         category_node = self.category_tree.insert("", "end", text=category, open=True, tags=('category',))
         return category_node
-    
-    def remove_element(self, category, element_name):
-        """Remove an element from the TreeView based on category and element name."""
+
+    def add_element(self, category, display_name, unique_id):
+        """Add element to TreeView with a unique ID, allowing duplicates."""
+        category_node = self.get_or_create_category_node(category)
+        self.category_tree.insert(category_node, "end", text=display_name, values=[unique_id], tags=('element',))
+        self.apply_treeview_styles()
+
+    def remove_element(self, category, element_name, unique_id):
+        """Remove an element from the TreeView based on category and unique ID."""
         for category_id in self.category_tree.get_children():
             if self.category_tree.item(category_id, 'text') == category:
                 for element_id in self.category_tree.get_children(category_id):
-                    if self.category_tree.item(element_id, 'text') == element_name:
+                    if self.category_tree.item(element_id, 'values')[0] == unique_id:
                         self.category_tree.delete(element_id)
                         break
                 if not self.category_tree.get_children(category_id):
