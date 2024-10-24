@@ -7,6 +7,12 @@ from ttkbootstrap.constants import *
 import tkinter as tk
 from database_module import store_image, get_all_elements, get_element_by_name  # Handles saving and loading images from the database
 import threading
+import logging
+import numpy as np
+
+# Set up logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 class MenuModule:
     def __init__(self, root, ui_module):
@@ -79,16 +85,51 @@ class MenuModule:
             self.close_current_menu()
 
     def save_scheme(self):
+        """Save the current camera frame to the database with enhanced error checking."""
+        logger.debug("save_scheme method called")
+        
+        # Get the scheme name from user
         scheme_name = simpledialog.askstring("Save Scheme", "Enter a name for the scheme:")
-        frame = self.ui_module.camera_module.get_current_frame()
-        if frame is None:
-            messagebox.showwarning("Warning", "No live feed available to save.")
+        logger.debug(f"User entered scheme name: {scheme_name}")
+        
+        if not scheme_name:
+            logger.debug("No scheme name provided - operation cancelled")
             return
-
-        # Store the scheme in the database
-        if scheme_name:
-            store_image(frame, scheme_name)
-            messagebox.showinfo("Success", f"Scheme '{scheme_name}' saved successfully!")
+            
+        # Get the current frame
+        try:
+            frame = self.ui_module.camera_module.get_current_frame()
+            logger.debug(f"Retrieved frame from camera module: {type(frame) if frame is not None else None}")
+            
+            if frame is None:
+                logger.error("No frame available from camera module")
+                messagebox.showwarning("Warning", "No live feed available to save.")
+                return
+                
+            # Verify frame is a valid image
+            if not isinstance(frame, np.ndarray):
+                logger.error(f"Invalid frame type: {type(frame)}")
+                messagebox.showerror("Error", "Invalid frame data")
+                return
+                
+            # Log frame properties
+            logger.debug(f"Frame shape: {frame.shape}")
+            logger.debug(f"Frame dtype: {frame.dtype}")
+            
+            # Attempt to store the image
+            try:
+                logger.debug("Attempting to store image in database...")
+                store_image(frame, scheme_name)
+                logger.info(f"Successfully saved scheme: {scheme_name}")
+                messagebox.showinfo("Success", f"Scheme '{scheme_name}' saved successfully!")
+                
+            except Exception as e:
+                logger.error(f"Error storing image in database: {str(e)}", exc_info=True)
+                messagebox.showerror("Error", f"Failed to save scheme: {str(e)}")
+                
+        except Exception as e:
+            logger.error(f"Error in save_scheme: {str(e)}", exc_info=True)
+            messagebox.showerror("Error", f"Error saving scheme: {str(e)}")
 
     def load_scheme(self):
         """Fetch schemes in a background thread and display a dialog in the main thread."""

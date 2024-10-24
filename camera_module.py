@@ -9,6 +9,11 @@ import io
 from database_module import get_element_by_name
 from tkinter import messagebox
 import numpy as np
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 
 def confidence_to_color(confidence):
@@ -49,15 +54,15 @@ class CameraModule:
         self.camera_label.bind("<Button-1>", self.on_camera_click)
         
         self.current_frame = None
-        self.loaded_image = None  # New attribute to store loaded image
+        self.loaded_image = None
         self.running = True
         
         self.cap = cv2.VideoCapture(0)
         if not self.cap.isOpened():
-            print("Cannot open camera")
+            logger.error("Cannot open camera")
             self.running = False
         else:
-            print("Camera opened successfully")
+            logger.info("Camera opened successfully")
             self.camera_thread = threading.Thread(target=self.camera_loop)
             self.camera_thread.daemon = True
             self.camera_thread.start()
@@ -117,15 +122,49 @@ class CameraModule:
             # If the click is outside the image area, do nothing
             pass
 
+    def get_current_frame(self):
+        """
+        Get the current frame being displayed, whether it's from the camera or a loaded image.
+        
+        Returns:
+            numpy.ndarray: The current frame in BGR format, or None if no frame is available
+        """
+        try:
+            if self.current_frame is None:
+                logger.warning("No frame available")
+                return None
+                
+            # If we're displaying a loaded image
+            if not self.live_mode and self.loaded_image is not None:
+                logger.debug("Returning loaded image frame")
+                # Convert PIL Image to BGR numpy array
+                return cv2.cvtColor(np.array(self.loaded_image), cv2.COLOR_RGB2BGR)
+            
+            # If we're in live mode
+            if self.live_mode and self.current_frame is not None:
+                logger.debug("Returning live camera frame")
+                return self.current_frame.copy()
+                
+            logger.warning("No valid frame available")
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error getting current frame: {e}")
+            return None
+
     def camera_loop(self):
         """Capture frames from the camera when live_mode is True."""
         while self.running:
             if self.live_mode:
-                ret, frame = self.cap.read()
-                if ret:
-                    self.current_frame = frame.copy()
-                else:
-                    print("Failed to read from camera")
+                try:
+                    ret, frame = self.cap.read()
+                    if ret:
+                        self.current_frame = frame.copy()
+                    else:
+                        logger.error("Failed to read from camera")
+                        self.running = False
+                except Exception as e:
+                    logger.error(f"Error in camera loop: {e}")
                     self.running = False
             time.sleep(0.03)
 
@@ -270,3 +309,18 @@ class CameraModule:
         """Reset the camera feed to live detection mode."""
         self.loaded_image = None  # Clear loaded image
         self.live_mode = True  # Turn on live mode
+
+    def release_resources(self):
+        """Cleanup method to properly release camera resources."""
+        try:
+            self.running = False
+            if hasattr(self, 'camera_thread'):
+                self.camera_thread.join()
+            if hasattr(self, 'cap'):
+                self.cap.release()
+            logger.info("Camera resources released")
+        except Exception as e:
+            logger.error(f"Error releasing camera resources: {e}")
+
+    def __del__(self):
+        self.release_resources()

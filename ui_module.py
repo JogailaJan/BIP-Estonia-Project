@@ -42,10 +42,6 @@ class UIModule:
         self.camera_module = CameraModule(self.middle_frame, self)
         self.element_info_module = ElementInfoModule(self.right_frame, self)
 
-    def save_elements_to_json(self, file_path):
-        """Save the detected elements and their information to a JSON file."""
-        self.element_manager.save_elements_to_json(file_path)
-
     def release_resources(self):
         # Release resources
         self.camera_module.release_resources()

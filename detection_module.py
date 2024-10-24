@@ -63,16 +63,14 @@ class DetectionModule:
             self.ui_module.element_manager.update_detected_elements_list,
             detected_elements
         )
-
-
+    
     def run_detection(self):
         """Start the detection thread."""
         print("Starting detection thread...")  # Debugging print
         self.detection_thread = threading.Thread(target=self.detection_loop)
         self.detection_thread.daemon = True  # Daemonize thread
         self.detection_thread.start()
-
-
+    
     def detection_loop(self):
         """Continuously run element detection in a separate thread."""
         while self.running:

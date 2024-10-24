@@ -5,65 +5,127 @@ from pymongo import MongoClient
 from dotenv import load_dotenv
 import io
 from PIL import Image
-import gridfs  # MongoDB GridFS for large file storage (optional)
 import cv2
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Get the MongoDB connection string from environment variables
 MONGO_URI = os.getenv("MONGO_URI")
+if not MONGO_URI:
+    raise ValueError("MONGO_URI environment variable is not set")
 
-# Initialize MongoDB connection
-client = MongoClient(MONGO_URI)
-db = client['SchemeDetectionDatabase']  # Replace with your actual database name
+try:
+    # Initialize MongoDB connection
+    client = MongoClient(MONGO_URI)
+    # Test the connection
+    client.admin.command('ping')
+    db = client['SchemeDetectionDatabase']
+    collection = db['schemes']
+    logger.info("Successfully connected to MongoDB")
+except Exception as e:
+    logger.error(f"Failed to connect to MongoDB: {e}")
+    raise
 
-# Define collection (replace with actual collection name)
-collection = db['schemes']
-
-
-# Function to insert a detected element
-def insert_detected_element(element_data):
-    try:
-        collection.insert_one(element_data)
-        print(f"Inserted element: {element_data['name']}")
-    except Exception as e:
-        print(f"Error inserting element: {e}")
-
-
-# Function to retrieve detected elements
-def get_all_elements():
-    try:
-        return list(collection.find())
-    except Exception as e:
-        print(f"Error retrieving elements: {e}")
-        return []
-
-
-def get_element_by_name(name):
-    try:
-        # Change the query to look for image_name instead of name
-        result = collection.find_one({"image_name": name})
-        print(f"Database query result for '{name}': {result}")  # Debug print
-        return result
-    except Exception as e:
-        print(f"Error retrieving element: {e}")
-        return None
-
-# Function to store image metadata (or the image if using GridFS)
 def store_image(image_data, image_name):
+    """
+    Store an image in MongoDB with improved error handling and validation.
+    
+    Args:
+        image_data: numpy array containing the image data
+        image_name: str, name to identify the image
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
     try:
+        # Input validation
+        if image_data is None:
+            logger.error("No image data provided")
+            return False
+            
+        if not isinstance(image_name, str) or not image_name.strip():
+            logger.error("Invalid image name provided")
+            return False
+
+        # Check if image name already exists
+        existing_image = collection.find_one({"image_name": image_name})
+        if existing_image:
+            logger.warning(f"Image with name '{image_name}' already exists")
+            return False
+
         # Convert OpenCV BGR image to RGB and then to PIL image
         image_rgb = cv2.cvtColor(image_data, cv2.COLOR_BGR2RGB)
         img = Image.fromarray(image_rgb)
         
         # Convert the image to bytes
         img_byte_arr = io.BytesIO()
-        img.save(img_byte_arr, format='PNG')  # Save image as PNG
+        img.save(img_byte_arr, format='PNG')
         img_byte_arr = img_byte_arr.getvalue()
 
         # Store the image in MongoDB
-        collection.insert_one({"image_name": image_name, "image_data": img_byte_arr})
-        print(f"Inserted image: {image_name}")
+        result = collection.insert_one({
+            "image_name": image_name,
+            "image_data": img_byte_arr
+        })
+        
+        if result.inserted_id:
+            logger.info(f"Successfully stored image: {image_name}")
+            return True
+        else:
+            logger.error("Failed to insert image into database")
+            return False
+
+    except cv2.error as e:
+        logger.error(f"OpenCV error while processing image: {e}")
+        return False
     except Exception as e:
-        print(f"Error storing image: {e}")
+        logger.error(f"Error storing image: {e}")
+        return False
+
+def get_element_by_name(name):
+    """
+    Retrieve an element from MongoDB by name with improved error handling.
+    
+    Args:
+        name: str, name of the element to retrieve
+    
+    Returns:
+        dict or None: The element if found, None otherwise
+    """
+    try:
+        if not isinstance(name, str) or not name.strip():
+            logger.error("Invalid name provided")
+            return None
+
+        result = collection.find_one({"image_name": name})
+        if result:
+            logger.info(f"Successfully retrieved element: {name}")
+            return result
+        else:
+            logger.warning(f"No element found with name: {name}")
+            return None
+
+    except Exception as e:
+        logger.error(f"Error retrieving element: {e}")
+        return None
+
+def get_all_elements():
+    """
+    Retrieve all elements from MongoDB with improved error handling.
+    
+    Returns:
+        list: List of elements, empty list if error occurs
+    """
+    try:
+        elements = list(collection.find())
+        logger.info(f"Successfully retrieved {len(elements)} elements")
+        return elements
+    except Exception as e:
+        logger.error(f"Error retrieving elements: {e}")
+        return []
