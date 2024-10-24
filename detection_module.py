@@ -61,7 +61,8 @@ class DetectionModule:
                      28:"On Local Control Panel",
                      29:"Station",
                      30:"Shared Indicator",
-                     31:"Level Gauge"}
+                     31:"Level Gauge",
+                     32: "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"}
     
     def detect_elements(self, frame):
         """Use YOLO to detect elements in the frame."""
