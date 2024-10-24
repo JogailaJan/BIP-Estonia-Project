@@ -1,3 +1,8 @@
-.env
-
+# Ignore the virtual environment folder
 yolo_env/
+
+# Ignore Python bytecode files
+__pycache__/
+
+# Ignore any environment configuration files
+.env
